@@ -1,0 +1,136 @@
+alias: iPixel
+description: Sends formatted info to iPixel via MQTT every minute with cycling content
+triggers:
+  - minutes: /1
+    trigger: time_pattern
+conditions: []
+actions:
+  - data:
+      entity_id: input_number.ipixel_count
+      value: "{{ counter }}"
+    action: input_number.set_value
+  - data:
+      topic: ipixel/6554874a3e63/set
+      payload: >
+        {% set counter_value = states('input_number.ipixel_count') | int %}
+
+        {% set now_str = now().astimezone().strftime('%H:%M') %}  {% set
+        weather_state = states('weather.forecast_home') %}  {% set weather_temp
+        = state_attr('weather.forecast_home','temperature') %}  {% set
+        weather_icon_map = {
+          'sunny':'☀','partlycloudy':'⛅','cloudy':'☁','rain':'🌧','rainy':'🌧',
+          'rain-cloud':'🌧','lightning':'⚡','lightning-rain':'🌩','snow':'❄',
+          'snow-rain':'🌨','fog':'🌫','wind':'🌬','hot':'🔥','cold':'❄'
+        } %}  {% set weather_icon =
+        weather_icon_map.get(weather_state|lower,'?') %}
+
+        {% set calendars =
+        ['calendar.personal'] %}  {% set
+        next_event_title = '' %}  {% for cal in calendars %}
+          {% set ev_title = state_attr(cal,'message') or state_attr(cal,'summary') %}
+          {% set ev_start = state_attr(cal,'start_time') %}
+          {% set ev_end = state_attr(cal,'end_time') %}
+          {% if ev_title and ev_start and ev_end %}
+            {% set start_dt = as_datetime(ev_start).astimezone() %}
+            {% set end_dt = as_datetime(ev_end).astimezone() %}
+            {% if now() <= end_dt %}
+              {% set next_event_title = ev_title %}
+              {% break %}
+            {% endif %}
+          {% endif %}
+        {% endfor %}
+
+        {% set news_entries = state_attr('sensor.algemeen','entries')[:4] %}  {%
+        set quote_text = state_attr('sensor.daily_quote','q') %}  {% set
+        quote_author = state_attr('sensor.daily_quote','a') %}  {% set
+        daily_quote = quote_text ~ ' — ' ~ quote_author if quote_text and
+        quote_author else 'Stay inspired!' %}
+
+        {# Determine which content to display based on counter #} {% set
+        display_text = '' %} {% set display_icon = '' %}
+
+        {% if counter_value == 0 %}
+          {# Slot 0: News item 1 #}
+          {% if news_entries and news_entries|length > 0 and news_entries[0].title %}
+            {% set display_text = news_entries[0].title %}
+            {% set display_icon = '📰' %}
+          {% else %}
+            {% set counter = (counter_value + 1) % 6 %}
+          {% endif %}
+
+        {% elif counter_value == 1 %}
+          {# Slot 1: News item 2 #}
+          {% if news_entries and news_entries|length > 1 and news_entries[1].title %}
+            {% set display_text = news_entries[1].title %}
+            {% set display_icon = '📰' %}
+          {% else %}
+            {% set counter = (counter_value + 1) % 6 %}
+          {% endif %}
+
+        {% elif counter_value == 2 %}
+          {# Slot 2: News item 3 #}
+          {% if news_entries and news_entries|length > 2 and news_entries[2].title %}
+            {% set display_text = news_entries[2].title %}
+            {% set display_icon = '📰' %}
+          {% else %}
+            {% set counter = (counter_value + 1) % 6 %}
+          {% endif %}
+
+        {% elif counter_value == 3 %}
+          {# Slot 3: News item 4 #}
+          {% if news_entries and news_entries|length > 3 and news_entries[3].title %}
+            {% set display_text = news_entries[3].title %}
+            {% set display_icon = '📰' %}
+          {% else %}
+            {% set counter = (counter_value + 1) % 6 %}
+          {% endif %}
+
+        {% elif counter_value == 4 %}
+          {# Slot 4: Calendar event #}
+          {% if next_event_title %}
+            {% set display_text = next_event_title %}
+            {% set display_icon = '📅' %}
+          {% else %}
+            {% set counter = (counter_value + 1) % 6 %}
+          {% endif %}
+
+        {% else %}
+          {# Slot 5: Daily quote #}
+          {% if quote_text %}
+            {% set display_text = daily_quote %}
+            {% set display_icon = '💭' %}
+          {% else %}
+            {% set counter = (counter_value + 1) % 6 %}
+          {% endif %}
+        {% endif %}
+
+        {# If no content was set for current slot, skip this cycle #} {% if not
+        display_text %}
+          {% set counter = (counter_value + 1) % 6 %}
+          {% set display_text = "Updating..." %}
+          {% set display_icon = '⏳' %}
+        {% endif %}
+
+        {# Always prepend time and weather to every message #} {% set
+        full_message = now_str ~ " " ~ weather_icon ~ " " ~ weather_temp|string
+        ~ "° " ~ display_icon ~ " " ~ display_text %}
+
+        {
+          "command": "send_text",
+          "params": [
+            "text={{ full_message[:100] }}",
+            "color=0006b1",
+            "speed=75", 
+            "animation=1",
+            "font=gnufont",
+            "matrix_height=16"
+          ]
+        }
+      qos: 1
+      retain: true
+    action: mqtt.publish
+mode: restart
+variables:
+  counter: >
+    {% set current = states('input_number.ipixel_count') | int %} {{ (current +
+    1) % 6 }}

@@ -1,0 +1,12 @@
+alias: iPixel OFF
+sequence:
+  - data:
+      topic: ipixel/6554874a3e63/set
+      payload: |
+        {"command": "led_off", "params": []}
+      retain: true
+    action: mqtt.publish
+  - action: input_boolean.turn_off
+    target:
+      entity_id: input_boolean.pixel_on
+mode: single

@@ -1,0 +1,14 @@
+alias: iPixel ON
+sequence:
+  - data:
+      topic: ipixel/6554874a3e63/set
+      payload: "{\"command\": \"led_on\", \"params\": []}"
+      retain: true
+    action: mqtt.publish
+  - action: input_boolean.turn_on
+    metadata: {}
+    data: {}
+    target:
+      entity_id: input_boolean.pixel_on
+mode: single
+description: ""

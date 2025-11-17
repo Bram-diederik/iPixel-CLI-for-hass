@@ -2,3 +2,5 @@ websockets
 bleak
 pillow
 crccheck
+dotenv
+paho

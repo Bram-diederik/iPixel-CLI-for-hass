@@ -1,3 +1,140 @@
+# iPixel MQTT Wrapper for Home Assistant
+
+This project provides an MQTT-based control layer for iPixel devices using the `ipixelcli` WebSocket server.  
+It allows Home Assistant to control LED matrices via MQTT topics while the Python script bridges commands to the WebSocket backend.
+
+---
+
+## 🚀 Features
+
+- Full MQTT→WebSocket bridge for iPixel
+- Persistent state publishing
+- Supports:
+  - Power on/off
+  - Text display
+  - Colors
+  - Speed
+  - Animations
+  - Fonts
+  - Matrix height
+- Supports both simple MQTT topics and structured JSON commands
+- Automatically starts the WebSocket server if it is not running
+
+---
+
+## 📂 MQTT Topic Overview
+
+Base topic is built automatically:
+
+```
+ipixel/<devicemacwithoutcolons>
+```
+
+Example device MAC: `65:54:87:4A:3E:63`  
+ → base: `ipixel/6554874a3e63`
+
+### Core Topics
+
+| Purpose | Topic | Description |
+|--------|-------|-------------|
+| Command | `ipixel/<id>/set` | Accepts JSON or command objects |
+| Power | `ipixel/<id>/power/set` | `ON` / `OFF` |
+| Send Text | `ipixel/<id>/send_text` | Raw text |
+| Send Text v2 | `ipixel/<id>/set/send_text` | Structured |
+| State | `ipixel/<id>/state` | Full JSON state |
+| Last Text | `ipixel/<id>/last_text` | Stores last text sent |
+
+### Example JSON Commands (no YAML formatting here)
+
+#### 1. Send text (simple)
+```
+{"send_text": "Hello World"}
+```
+
+#### 2. Send text with parameters
+```
+{
+  "send_text": "Hello",
+  "color": "ff00ff",
+  "speed": 50,
+  "animation": 3
+}
+```
+
+#### 3. Raw WebSocket command passthrough
+```
+{
+  "command": "send_text",
+  "params": [
+    "Hello World",
+    "color=00ff00",
+    "speed=90"
+  ]
+}
+```
+
+#### Turn off the display
+```
+{"command": "led_off", "params": []}
+```
+
+---
+
+## 🔧 Environment Variables (.env)
+
+Your `.env` must contain:
+
+```
+MQTT_HOST=<your mqtt host>
+MQTT_PORT=8883 or 1883
+MQTT_USER=<mqtt username>
+MQTT_PASS=<mqtt password>
+SSL_ENABLED=True/False
+DEVICE_MAC=##:##:##:##:##:##
+#IPIXELCLI=python ./ipixelcli.py
+#WS_PORT=8765
+```
+
+---
+
+## ▶️ Running the Script
+
+```
+python3 mqtt.py
+```
+
+It will:
+
+- Start the MQTT listener
+- Start or connect to the WebSocket server
+- Publish state updates every 10 seconds
+
+---
+
+## 🧩 Home Assistant Integration
+
+Use MQTT Entities (any style you prefer).  
+**Do NOT use YAML syntax here as requested.**
+
+---
+
+## 🛠 Troubleshooting
+
+- If text does not display, check:
+  - WebSocket reachable at `127.0.0.1:<WS_PORT>`
+  - Device MAC matches reality
+  - MQTT user permission
+- If the display turns on but shows nothing:
+  - Some commands send a blank space (`" "`) to wake the device
+
+---
+
+## 📜 License
+MIT
+
+
+
+
 # For development version, see [pypixelcolor](https://github.com/lucagoc/iPixel-CLI/tree/pypixel-next).
 More info [here](https://github.com/lucagoc/iPixel-CLI/discussions/38).
 
