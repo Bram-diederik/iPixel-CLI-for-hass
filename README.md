@@ -1,3 +1,8 @@
+# NOTE ALL WILL CHANGE. 
+the parent code got changed. 
+and this will be best a addon to home assistant. (perhaps with integration that can discover new devices) 
+anway enjoy hacking
+
 # iPixel MQTT Wrapper for Home Assistant
 
 This project provides an MQTT-based control layer for iPixel devices using the `ipixelcli` WebSocket server.  
