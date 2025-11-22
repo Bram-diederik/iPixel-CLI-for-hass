@@ -1,4 +1,6 @@
 # NOTE ALL WILL CHANGE. 
+[![Watch the video](https://img.youtube.com/vi/JcBljiFmBiM/maxresdefault.jpg)](https://www.youtube.com/watch?v=JcBljiFmBiM)
+
 the parent code got changed. 
 and this will be best a addon to home assistant. (perhaps with integration that can discover new devices) 
 anway enjoy hacking
