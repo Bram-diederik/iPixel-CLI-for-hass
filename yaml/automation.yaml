@@ -1,136 +1,454 @@
 alias: iPixel
 description: Sends formatted info to iPixel via MQTT every minute with cycling content
 triggers:
-  - minutes: /1
-    trigger: time_pattern
-conditions: []
+  - trigger: time_pattern
+    minutes: /1
+  - entity_id: input_text.ipixel_text
+    trigger: state
+conditions:
+  - condition: state
+    entity_id: input_boolean.pixel_on
+    state: "on"
 actions:
+  - variables:
+      base: >-
+        {% set weather_state = states('weather.forecast_home') %} {% set
+        weather_icon =
+          '☀' if weather_state == 'sunny' else
+          '☀' if weather_state == 'clear' else
+          '🌙' if weather_state == 'clear-night' else
+          '⛅' if weather_state == 'partlycloudy' else
+          '☁' if weather_state == 'cloudy' else
+          '🌫' if weather_state == 'fog' else
+          '🌧' if weather_state == 'rainy' else
+          '🌧' if weather_state == 'pouring' else
+          '⛈' if weather_state == 'lightning-rainy' else
+          '🌩' if weather_state == 'lightning' else
+          '🌨' if weather_state == 'snowy' else
+          '🌧🌨' if weather_state == 'snowy-rainy' else
+          '🧊' if weather_state == 'hail' else
+          '🍃' if weather_state == 'windy' else
+          '🍃' if weather_state == 'windy-variant' else
+          '⚠️' if weather_state == 'exceptional' else
+          '🌡'
+        %} {% set knmi = states('sensor.knmi_weercode_2') %} {% set knmi_alert =
+        ' code:' ~ knmi ~ ' ' if knmi in ['geel','oranje','rood'] else '' %} {{
+        now().astimezone().strftime('%H:%M') }} {{ knmi_alert }}{{ weather_icon
+        }}{{ state_attr('weather.forecast_home','temperature') }}°{{ '🔥' if
+        state_attr('climate.core_mosquitto_diyless_thermostat','hvac_action') ==
+        'heating' else '🌡' }}{{ states('sensor.minion_temperatuur') | float |
+        round(1) }}°
+  - choose:
+      - conditions:
+          - condition: template
+            value_template: >-
+              {{ (states('input_text.ipixel_text') != '') and
+              (states('input_text.ipixel_text') != 'unknown') }}
+        sequence:
+          - variables:
+              final_text: "{{ states('input_text.ipixel_text') }}"
+              increment: "{{ states('input_number.ipixel_count') }}"
+      - conditions:
+          - condition: template
+            value_template: "{{ (states('input_number.ipixel_count') | int) == 0 }}"
+        sequence:
+          - variables:
+              display: >-
+                {% set netspeed = '⬇' ~
+                states('sensor.speedtest_download')|int|string ~
+                    'mb/s ⬆' ~ states('sensor.speedtest_upload')|int|string ~ 'mb/s ⏱' ~
+                    states('sensor.speedtest_ping')|int|string ~ 'ms' %} {% set ns =
+                    namespace(output="") %} {% for server in
+                    ['doorman','squire','buggy','mouse','blue_mage','hushname','vuurvliegje','karin','alfred','hushhush','kali','sara','heppy']
+                    %} {% set apt = states('sensor.' + server + '_apt_upgradeable') | int(0)
+                    %} {% set disk = states('sensor.' + server + '_root_disk_space') |
+                    float(0) %} {% if apt > 0 or disk > 95 %} {% set ns.output = ns.output +
+                    server + ':' %} {% if apt > 0 %}{% set ns.output = ns.output + ' 📦' +
+                    apt|string %}{% endif %} {% if disk < 11 %}{% set ns.output = ns.output
+                    + ' 💾' + disk|round|string + '%' %}{% endif %} {% set ns.output =
+                    ns.output + ' ' %} {% endif %} {% endfor %} {% set display_text =
+                    ns.output if ns.output != "" else 'All systems normal' %} {% set
+                    display_icon = '🖥' if ns.output != "" else '✅' %}
+                    {{netspeed}} {{ display_icon}} {{display_text}}
+              final_text: >-
+                {% set t = base ~ display %} {{ t if t|length <= 100 else t[:99]
+                ~ '…' }}
+              increment: 1
+      - conditions:
+          - condition: template
+            value_template: "{{ (states('input_number.ipixel_count') | int) ==1 }}"
+        sequence:
+          - data:
+              type: hourly
+            target:
+              entity_id: weather.knmi_home
+            response_variable: weather_forecast
+            action: weather.get_forecasts
+          - variables:
+              hourly_forecast: >-
+                {% set forecast = weather_forecast['weather.knmi_home'].forecast
+                %} {% set
+                   now_hour = now().hour %} {% set ns = namespace(output='🌡 ') %} {% set count
+                   = 0 %} {% for hour in forecast %}
+                     {% if count >= 5 %}{% break %}{% endif %}
+                     {% set hour_time = as_timestamp(hour.datetime) | timestamp_custom('%H') | int %}
+                     {% if hour_time > now_hour %}
+                       {% set weather_icon =
+                         '☀' if hour.condition in ['sunny','clear'] else
+                         '🌙' if hour.condition=='clear-night' else
+                         '⛅' if hour.condition=='partlycloudy' else
+                         '☁' if hour.condition=='cloudy' else
+                         '🌫' if hour.condition=='fog' else
+                         '🌧' if hour.condition in ['rainy','pouring'] else
+                         '⛈' if hour.condition=='lightning-rainy' else
+                         '🌩' if hour.condition=='lightning' else
+                         '🌨' if hour.condition=='snowy' else
+                         '🌧🌨' if hour.condition=='snowy-rainy' else
+                         '🧊' if hour.condition=='hail' else
+                         '🍃' if hour.condition in ['windy','windy-variant'] else
+                         '⚠️'
+                       %}
+                       {% set ns.output = ns.output ~ hour_time|string ~ 'h' ~ weather_icon ~ (hour.temperature|round) ~ '° ' %}
+                       {% set count = count + 1 %}
+                     {% endif %}
+                   {% endfor %} {{ ns.output }}
+              final_text: "{{ base ~ hourly_forecast }}"
+              increment: 2
+      - conditions:
+          - condition: template
+            value_template: "{{ (states('input_number.ipixel_count') | int) ==2 }}"
+        sequence:
+          - data:
+              type: daily
+            target:
+              entity_id: weather.knmi_home
+            response_variable: weather_forecast
+            action: weather.get_forecasts
+          - variables:
+              days_forecast: >-
+                {% set forecast = weather_forecast['weather.knmi_home'].forecast
+                %} {% set weekdays = ['ma','di','wo','do','vr','za','zo'] %} {%
+                set ns = namespace(output='🌡 ') %} {% for i in range(0, 5) %} 
+                {% set day = forecast[i] %} {% set wd =
+                weekdays[(as_timestamp(day.datetime) | timestamp_custom('%w') |
+                int -1) %7] %} {% set weather_icon =
+                  '☀' if day.condition in ['sunny','clear'] else
+                  '🌙' if day.condition=='clear-night' else
+                  '⛅' if day.condition=='partlycloudy' else
+                  '☁' if day.condition=='cloudy' else
+                  '🌫' if day.condition=='fog' else
+                  '🌧' if day.condition in ['rainy','pouring'] else
+                  '⛈' if day.condition=='lightning-rainy' else
+                  '🌩' if day.condition=='lightning' else
+                  '🌨' if day.condition=='snowy' else
+                  '🌧🌨' if day.condition=='snowy-rainy' else
+                  '🧊' if hour.condition=='hail' else
+                  '🍃' if day.condition in ['windy','windy-variant'] else
+                  '⚠️'
+                %} {% set ns.output = ns.output ~ wd ~ weather_icon ~
+                (day.temperature|round) ~ '° ' %} {% endfor %} {{ ns.output }}
+              final_text: "{{ base ~ days_forecast }}"
+              increment: 3
+      - conditions:
+          - condition: template
+            value_template: "{{ (states('input_number.ipixel_count') | int) == 3 }}"
+        sequence:
+          - variables:
+              news_entries: "{{ state_attr('sensor.algemeen','entries') or [] }}"
+              final_text: >-
+                {{ base ~ '📰' ~ (news_entries[0].title if news_entries|length >
+                0 else 'No current news') }}
+              increment: 4
+      - conditions:
+          - condition: template
+            value_template: "{{ (states('input_number.ipixel_count') | int) == 4 }}"
+        sequence:
+          - variables:
+              news_entries: "{{ state_attr('sensor.algemeen','entries') or [] }}"
+              final_text: >-
+                {{ base ~ '📰' ~ (news_entries[1].title if news_entries|length >
+                1 else 'No more news') }}
+              increment: 5
+      - conditions:
+          - condition: template
+            value_template: "{{ (states('input_number.ipixel_count') | int) == 5 }}"
+        sequence:
+          - variables:
+              news_entries: "{{ state_attr('sensor.algemeen','entries') or [] }}"
+              final_text: >-
+                {{ base ~ '📰' ~ (news_entries[2].title if news_entries|length >
+                2 else 'No more news') }}
+              increment: 6
+      - conditions:
+          - condition: template
+            value_template: "{{ (states('input_number.ipixel_count') | int) == 6 }}"
+        sequence:
+          - variables:
+              news_entries: "{{ state_attr('sensor.algemeen','entries') or [] }}"
+              final_text: >-
+                {{ base ~ '📰' ~ (news_entries[3].title if news_entries|length >
+                3 else 'No more news') }}
+              increment: 7
+      - conditions:
+          - condition: template
+            value_template: "{{ (states('input_number.ipixel_count') | int) == 7 }}"
+        sequence:
+          - if:
+              - condition: template
+                value_template: >-
+                  {{ state_attr('calendar.personal','message') or
+                  state_attr('calendar.personal','summary') }}
+            then:
+              - variables:
+                  event_title: >-
+                    {{ state_attr('calendar.personal','message') or
+                    state_attr('calendar.personal','summary') }}
+                  event_time: >-
+                    {% set start = state_attr('calendar.personal','start_time')
+                    %} {{ as_timestamp(start) | timestamp_custom('%H:%M') if
+                    start else '' }}
+                  final_text: >-
+                    {{ base ~ '📅' ~ (event_time + ' ' if event_time else '') ~
+                    event_title }}
+                  increment: 8
+            else:
+              - if:
+                  - condition: template
+                    value_template: |-
+                      ## {{ states('sensor.knmi_weersverwachting') }}
+                      {% set ns = namespace (found = 0) %}
+                      {% set distance = 100 %}
+                      {% for entity in states.geo_location %}
+                        {% if entity.attributes.source == 'gdacs' and entity.state | int < distance %}
+                        {% set ns.found = 1 %}
+                        {% endif %}
+                      {% endfor %}
+
+                        {% if ns.found == 1 %}
+                       true
+                       {% else %}
+                       false
+                        {% endif %}
+                then:
+                  - variables:
+                      gdacs_text: >
+                        {% set ns = namespace (found = 0) %} {% set distance =
+                        100 %} {% for entity in states.geo_location %} {% if
+                        entity.attributes.source == 'gdacs' and entity.state |
+                        int < distance %} {% set ns.found = 1 %} {{
+                        entity.attributes.description }} Type: {{
+                        entity.attributes.event_type }}  Level: {{
+                        entity.attributes.alert_level }} Distance: {{
+                        entity.state }} km {% endif %} {% endfor %}
+                      final_text: "{{ base }} {{ '🌍' + gdacs_text }}"
+                      increment: 9
+                else:
+                  - variables:
+                      quote_text: "{{ state_attr('sensor.daily_quote','q') }}"
+                      quote_author: "{{ state_attr('sensor.daily_quote','a') }}"
+                      final_text: >-
+                        {{ base }}  💭 {{ (quote_text ~ ' — ' ~ quote_author if
+                        quote_text and quote_author else 'Stay inspired!') }}
+                      increment: >-
+                        {% set ns = namespace(voicemails=[]) %}
+
+                        {% for state in states.sensor %} {% if
+                        state.entity_id.startswith('sensor.voicemail_msg') and
+                        'transcription' in state.attributes %} {% set msg_time =
+                        strptime(state.attributes.timestamp, '%a %b %d %I:%M:%S
+                        %p %Z %Y') %} {% set ns.voicemails = ns.voicemails + [{
+                        'timestamp': msg_time.timestamp() | int, 'caller':
+                        state.attributes.caller_id, 'summary':
+                        state.attributes.get('summary',
+                        state.attributes.transcription) }] %} {% endif %} {%
+                        endfor %}
+
+                        {% set sorted_vm = ns.voicemails %} 
+
+
+                        {% if sorted_vm | length > 0 %} 10 {% else %} 0   {%
+                        endif %}
+      - conditions:
+          - condition: template
+            value_template: "{{ (states('input_number.ipixel_count') | int) == 8 }}"
+        sequence:
+          - if:
+              - condition: template
+                value_template: |-
+                  ## {{ states('sensor.knmi_weersverwachting') }}
+                  {% set ns = namespace (found = 0) %}
+                  {% set distance = 100 %}
+                  {% for entity in states.geo_location %}
+                    {% if entity.attributes.source == 'gdacs' and entity.state | int < distance %}
+                    {% set ns.found = 1 %}
+                    {% endif %}
+                  {% endfor %}
+
+                    {% if ns.found == 1 %}
+                   true
+                   {% else %}
+                   false
+                    {% endif %}
+            then:
+              - variables:
+                  gdacs_text: >
+                    {% set ns = namespace (found = 0) %} {% set distance = 100
+                    %} {% for entity in states.geo_location %} {% if
+                    entity.attributes.source == 'gdacs' and entity.state | int <
+                    distance %} {% set ns.found = 1 %} {{
+                    entity.attributes.description }} Type: {{
+                    entity.attributes.event_type }}  Level: {{
+                    entity.attributes.alert_level }} Distance: {{ entity.state
+                    }} km {% endif %} {% endfor %}
+                  final_text: "{{ base }} {{ '🌍' + gdacs_text }}"
+                  increment: 9
+            else:
+              - variables:
+                  quote_text: "{{ state_attr('sensor.daily_quote','q') }}"
+                  quote_author: "{{ state_attr('sensor.daily_quote','a') }}"
+                  final_text: >-
+                    {{ base }}  💭 {{ (quote_text ~ ' — ' ~ quote_author if
+                    quote_text and quote_author else 'Stay inspired!') }}
+                  increment: >-
+                    {% set ns = namespace(voicemails=[]) %}
+
+                    {% for state in states.sensor %} {% if
+                    state.entity_id.startswith('sensor.voicemail_msg') and
+                    'transcription' in state.attributes %} {% set msg_time =
+                    strptime(state.attributes.timestamp, '%a %b %d %I:%M:%S %p
+                    %Z %Y') %} {% set ns.voicemails = ns.voicemails + [{
+                    'timestamp': msg_time.timestamp() | int, 'caller':
+                    state.attributes.caller_id, 'summary':
+                    state.attributes.get('summary',
+                    state.attributes.transcription) }] %} {% endif %} {% endfor
+                    %}
+
+                    {% set sorted_vm = ns.voicemails %} 
+
+
+
+                    {% if sorted_vm | length > 0 %} 10 {% else %} 0   {% endif
+                    %}
+      - conditions:
+          - condition: template
+            value_template: "{{ (states('input_number.ipixel_count') | int) == 9 }}"
+        sequence:
+          - variables:
+              quote_text: "{{ state_attr('sensor.daily_quote','q') }}"
+              quote_author: "{{ state_attr('sensor.daily_quote','a') }}"
+              final_text: >-
+                {{ base ~ '💭' ~ (quote_text ~ ' — ' ~ quote_author if
+                quote_text and quote_author else 'Stay inspired!') }}
+              increment: >-
+                {% set ns = namespace(voicemails=[]) %}
+
+                {% for state in states.sensor %} {% if
+                state.entity_id.startswith('sensor.voicemail_msg') and
+                'transcription' in state.attributes %} {% set msg_time =
+                strptime(state.attributes.timestamp, '%a %b %d %I:%M:%S %p %Z
+                %Y') %} {% set ns.voicemails = ns.voicemails + [{ 'timestamp':
+                msg_time.timestamp() | int, 'caller':
+                state.attributes.caller_id, 'summary':
+                state.attributes.get('summary', state.attributes.transcription)
+                }] %} {% endif %} {% endfor %}
+
+                {% set sorted_vm = ns.voicemails | sort(attribute='timestamp')
+                %} {% set count = states('input_number.ipixel_count') | int %}
+
+
+                {% set current_index = count - 10 %} 
+
+                {% set next_index = current_index + 1 %}
+
+                {% if sorted_vm | length > next_index %} {{ next_index + 10 }} 
+                {% else %} 0   {% endif %}
+      - conditions:
+          - condition: template
+            value_template: "{{ (states('input_number.ipixel_count') | int) > 9 }}"
+        sequence:
+          - variables:
+              final_text: >-
+                {% set ns = namespace(voicemails=[]) %}
+
+                {% for state in states.sensor %} {% if
+                state.entity_id.startswith('sensor.voicemail_msg') and
+                'transcription' in state.attributes %} {% set msg_time =
+                strptime(state.attributes.timestamp, '%a %b %d %I:%M:%S %p %Z
+                %Y') %} {% set ns.voicemails = ns.voicemails + [{ 'timestamp':
+                msg_time.timestamp() | int, 'caller':
+                state.attributes.caller_id, 'summary':
+                state.attributes.get('summary', state.attributes.transcription)
+                }] %} {% endif %} {% endfor %} {# Sort earliest first #} {% set
+                sorted_vm = ns.voicemails | sort(attribute='timestamp') %} {#
+                Get the starting index based on ipixel_count #} {% set count =
+                states('input_number.ipixel_count') | int %} {% set index =
+                count - 10 %} 
+
+
+                {% set vm = sorted_vm[index] if sorted_vm | length > index else
+                none %}
+
+                {% if vm %} {# Local time HH:mm #} {% set local_time =
+                vm.timestamp | timestamp_custom('%H:%M', true) %}
+
+                {# Parse caller: NAME<NUMBER> or <NUMBER> #} {% set raw =
+                vm.caller %} {% if '<' in raw and '>' in raw %} {% set name =
+                raw.split('<')[0] | trim %} {% set number =
+                raw.split('<')[1].split('>')[0] | trim %} {% if name|lower in
+                ['unknown', 'onbekend', ''] %} {% set caller = number %} {% else
+                %} {% set caller = name %} {% endif %} {% else %} {% set caller
+                = raw %} {% endif %}
+
+                {# Current voicemail text #} {% set final_text = "🕒 " ~
+                local_time ~ " – " ~ caller ~ " – " ~ vm.summary %} {% else %}
+                {% set final_text = "No voicemail" %} {% endif %} {{base}}{{
+                final_text }}
+              increment: >-
+                {% set ns = namespace(voicemails=[]) %}
+
+                {% for state in states.sensor %} {% if
+                state.entity_id.startswith('sensor.voicemail_msg') and
+                'transcription' in state.attributes %} {% set msg_time =
+                strptime(state.attributes.timestamp, '%a %b %d %I:%M:%S %p %Z
+                %Y') %} {% set ns.voicemails = ns.voicemails + [{ 'timestamp':
+                msg_time.timestamp() | int, 'caller':
+                state.attributes.caller_id, 'summary':
+                state.attributes.get('summary', state.attributes.transcription)
+                }] %} {% endif %} {% endfor %}
+
+                {% set sorted_vm = ns.voicemails | sort(attribute='timestamp')
+                %} {% set count = states('input_number.ipixel_count') | int %}
+
+
+                {% set current_index = count - 10 %} 
+
+                {% set next_index = current_index + 1 %}
+
+                {% if sorted_vm | length > next_index %} {{ next_index + 10 }} 
+                {% else %} 0   {% endif %}
   - data:
-      entity_id: input_number.ipixel_count
-      value: "{{ counter }}"
+      value: "{{  increment }}"
     action: input_number.set_value
+    target:
+      entity_id: input_number.ipixel_count
+  - variables:
+      final_text: >-
+        {{ (final_text|replace('"', "'") ) if final_text|length <= 100 else
+        (final_text[:99]|replace('"', "'") ~ '…') }}
   - data:
       topic: ipixel/6554874a3e63/set
-      payload: >
-        {% set counter_value = states('input_number.ipixel_count') | int %}
-
-        {% set now_str = now().astimezone().strftime('%H:%M') %}  {% set
-        weather_state = states('weather.forecast_home') %}  {% set weather_temp
-        = state_attr('weather.forecast_home','temperature') %}  {% set
-        weather_icon_map = {
-          'sunny':'☀','partlycloudy':'⛅','cloudy':'☁','rain':'🌧','rainy':'🌧',
-          'rain-cloud':'🌧','lightning':'⚡','lightning-rain':'🌩','snow':'❄',
-          'snow-rain':'🌨','fog':'🌫','wind':'🌬','hot':'🔥','cold':'❄'
-        } %}  {% set weather_icon =
-        weather_icon_map.get(weather_state|lower,'?') %}
-
-        {% set calendars =
-        ['calendar.personal'] %}  {% set
-        next_event_title = '' %}  {% for cal in calendars %}
-          {% set ev_title = state_attr(cal,'message') or state_attr(cal,'summary') %}
-          {% set ev_start = state_attr(cal,'start_time') %}
-          {% set ev_end = state_attr(cal,'end_time') %}
-          {% if ev_title and ev_start and ev_end %}
-            {% set start_dt = as_datetime(ev_start).astimezone() %}
-            {% set end_dt = as_datetime(ev_end).astimezone() %}
-            {% if now() <= end_dt %}
-              {% set next_event_title = ev_title %}
-              {% break %}
-            {% endif %}
-          {% endif %}
-        {% endfor %}
-
-        {% set news_entries = state_attr('sensor.algemeen','entries')[:4] %}  {%
-        set quote_text = state_attr('sensor.daily_quote','q') %}  {% set
-        quote_author = state_attr('sensor.daily_quote','a') %}  {% set
-        daily_quote = quote_text ~ ' — ' ~ quote_author if quote_text and
-        quote_author else 'Stay inspired!' %}
-
-        {# Determine which content to display based on counter #} {% set
-        display_text = '' %} {% set display_icon = '' %}
-
-        {% if counter_value == 0 %}
-          {# Slot 0: News item 1 #}
-          {% if news_entries and news_entries|length > 0 and news_entries[0].title %}
-            {% set display_text = news_entries[0].title %}
-            {% set display_icon = '📰' %}
-          {% else %}
-            {% set counter = (counter_value + 1) % 6 %}
-          {% endif %}
-
-        {% elif counter_value == 1 %}
-          {# Slot 1: News item 2 #}
-          {% if news_entries and news_entries|length > 1 and news_entries[1].title %}
-            {% set display_text = news_entries[1].title %}
-            {% set display_icon = '📰' %}
-          {% else %}
-            {% set counter = (counter_value + 1) % 6 %}
-          {% endif %}
-
-        {% elif counter_value == 2 %}
-          {# Slot 2: News item 3 #}
-          {% if news_entries and news_entries|length > 2 and news_entries[2].title %}
-            {% set display_text = news_entries[2].title %}
-            {% set display_icon = '📰' %}
-          {% else %}
-            {% set counter = (counter_value + 1) % 6 %}
-          {% endif %}
-
-        {% elif counter_value == 3 %}
-          {# Slot 3: News item 4 #}
-          {% if news_entries and news_entries|length > 3 and news_entries[3].title %}
-            {% set display_text = news_entries[3].title %}
-            {% set display_icon = '📰' %}
-          {% else %}
-            {% set counter = (counter_value + 1) % 6 %}
-          {% endif %}
-
-        {% elif counter_value == 4 %}
-          {# Slot 4: Calendar event #}
-          {% if next_event_title %}
-            {% set display_text = next_event_title %}
-            {% set display_icon = '📅' %}
-          {% else %}
-            {% set counter = (counter_value + 1) % 6 %}
-          {% endif %}
-
-        {% else %}
-          {# Slot 5: Daily quote #}
-          {% if quote_text %}
-            {% set display_text = daily_quote %}
-            {% set display_icon = '💭' %}
-          {% else %}
-            {% set counter = (counter_value + 1) % 6 %}
-          {% endif %}
-        {% endif %}
-
-        {# If no content was set for current slot, skip this cycle #} {% if not
-        display_text %}
-          {% set counter = (counter_value + 1) % 6 %}
-          {% set display_text = "Updating..." %}
-          {% set display_icon = '⏳' %}
-        {% endif %}
-
-        {# Always prepend time and weather to every message #} {% set
-        full_message = now_str ~ " " ~ weather_icon ~ " " ~ weather_temp|string
-        ~ "° " ~ display_icon ~ " " ~ display_text %}
-
+      qos: 1
+      retain: true
+      payload: |-
         {
           "command": "send_text",
           "params": [
-            "text={{ full_message[:100] }}",
+            "text={{ final_text }}",
             "color=0006b1",
-            "speed=75", 
+            "speed=75",
             "animation=1",
-            "font=gnufont",
-            "matrix_height=16"
+            "font=gnufont"
           ]
         }
-      qos: 1
-      retain: true
     action: mqtt.publish
 mode: restart
-variables:
-  counter: >
-    {% set current = states('input_number.ipixel_count') | int %} {{ (current +
-    1) % 6 }}
