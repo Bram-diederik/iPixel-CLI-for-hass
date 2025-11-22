@@ -62,10 +62,10 @@ actions:
                     ['doorman','squire','buggy','mouse','blue_mage','hushname','vuurvliegje','karin','alfred','hushhush','kali','sara','heppy']
                     %} {% set apt = states('sensor.' + server + '_apt_upgradeable') | int(0)
                     %} {% set disk = states('sensor.' + server + '_root_disk_space') |
-                    float(0) %} {% if apt > 0 or disk > 95 %} {% set ns.output = ns.output +
+                    float(0) %} {% if apt > 0 or disk < 6%} {% set ns.output = ns.output +
                     server + ':' %} {% if apt > 0 %}{% set ns.output = ns.output + ' 📦' +
                     apt|string %}{% endif %} {% if disk < 6 %}{% set ns.output = ns.output
-                    + ' 💾' + disk|round|string + '%' %}{% endif %} {% set ns.output =
+                    + ' 💾' + disk|round|string + '%' free %}{% endif %} {% set ns.output =
                     ns.output + ' ' %} {% endif %} {% endfor %} {% set display_text =
                     ns.output if ns.output != "" else 'All systems normal' %} {% set
                     display_icon = '🖥' if ns.output != "" else '✅' %}
